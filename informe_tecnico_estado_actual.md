@@ -1,11 +1,19 @@
 # Informe Técnico del Estado Actual del Proyecto: Menú Digital
 
+### Control de versiones
+| Versión | Fecha | Descripción |
+| --- | --- | --- |
+| 1.0 | 03/08/2026 | Documento inicial. Infraestructura y setup del proyecto. |
+| 1.1 | 13/08/2026 | Refactorización de infraestructura: Migración de base de datos a Supabase (PostgreSQL), optimización de Docker y actualización de dependencias de Django. |
+
+---
+
 ## 1. Información General
 - **Nombre del proyecto:** Menú Digital
 - **Objetivo del proyecto:** Plataforma web para restaurantes donde los clientes puedan consultar un menú digital y los platos se presenten de forma atractiva, integrando reproducción de video multimedia.
-- **Descripción funcional:** Sistema asíncrono y desacoplado, compuesto por una API REST segura para la administración (backend) y una interfaz de usuario reactiva y dinámica (frontend). Todo ejecutado 100% sobre tecnología de contenedores.
-- **Estado actual del desarrollo:** Fase de *Infraestructura y Setup completado*. La arquitectura base, orquestación, bases de datos y test de conexión Frontend-Backend están funcionales e implementados exitosamente.
-- **Fecha del informe:** 03 de Agosto de 2026.
+- **Descripción funcional:** Sistema asíncrono y desacoplado, compuesto por una API REST segura para la administración (backend) y una interfaz de usuario reactiva y dinámica (frontend). Todo ejecutado sobre tecnología de contenedores ligeros con persistencia en la nube.
+- **Estado actual del desarrollo:** Fase de *Infraestructura y Refactorización Cloud completada*. La arquitectura base, orquestación en Docker desacoplada, base de datos PostgreSQL en Supabase Cloud y tests de conexión Frontend-Backend están funcionales e implementados exitosamente.
+- **Fecha del informe:** 13 de Agosto de 2026.
 
 ---
 
@@ -20,12 +28,12 @@
 - **Razón:** Django es "baterías incluidas"; otorga un panel de administrador inmediato, ORM robusto contra inyecciones SQL y estructura sólida. DRF lo transforma en una API profesional en minutos lista para consumo.
 
 ### Base de Datos
-- **Herramienta:** MariaDB SQL.
-- **Razón:** Altamente escalable, transaccional, y en perfecta madurez. Muy superior a SQLite en concurrencias de ambientes productivos.
+- **Herramienta:** Supabase (PostgreSQL).
+- **Razón:** Base de datos relacional PostgreSQL de nivel empresarial alojada en la nube (DBaaS). Ofrece alta disponibilidad, escalabilidad inmediata y soporte nativo para Connection Pooling (puerto 5273), garantizando compatibilidad de resolución DNS (IPv4) desde contenedores Docker en entornos Windows/WSL2. Centraliza la persistencia de datos (incluyendo usuarios y autenticación) en internet, eliminando la necesidad de migraciones locales o sincronizaciones de volcados entre diferentes equipos de desarrollo.
 
 ### Docker
 - **Herramienta:** Docker Engine & Compose.
-- **Razón:** Asegura paridad absoluta entre el equipo de desarrollo (tu PC de escritorio y tu laptop) y el servidor de producción. Evita contaminación cruzada de librerías en el Sistema Operativo Anfitrión (Windows).
+- **Razón:** Asegura paridad absoluta entre el equipo de desarrollo (PC de escritorio y laptop) y el servidor de producción. Permite una orquestación limpia y desacoplada de los microservicios frontend y backend sin contaminar el sistema operativo anfitrión.
 
 ### Control de Versiones
 - **Herramienta:** Git.
@@ -34,6 +42,7 @@
 ### Otras Herramientas
 - **Gestión de variables:** `python-dotenv` (Backend), Inyección nativa `import.meta.env` (Frontend).
 - **Seguridad:** JWT (JSON Web Tokens) gestionado mediante `djangorestframework-simplejwt`.
+- **Driver de Base de Datos:** `psycopg2-binary` para comunicación optimizada entre Django y el cluster PostgreSQL de Supabase.
 - **Multimedia:** Estructura planificada para **Cloudinary**.
 
 ---
@@ -41,8 +50,10 @@
 ## 3. Arquitectura Implementada
 
 ### Diseño
-El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arquitectura Limpia basada en contenedores**:
-- Ninguno de los componentes (Frontend/Backend) conoce los detalles operacionales y físicos del otro; únicamente consumen y exponen interfaces HTTP/API REST.
+El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arquitectura Limpia basada en contenedores y servicios Cloud**:
+- Los microservicios locales (Frontend y Backend) operan en contenedores Docker independientes.
+- El backend se comunica de forma segura mediante SSL/TLS con el cluster gestionado de **Supabase (PostgreSQL)** en la nube a través de su Connection Pooler.
+- El desacoplamiento es total: el backend no depende de un contenedor de base de datos local para inicializarse.
 
 ### Diagrama Textual
 ```text
@@ -65,17 +76,16 @@ El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arqui
 |    - App: menu (Lógica Transaccional)               |
 +--------------------|--------------------------------+
                      |
-                 (Conexión TCP / SQL)
+         (Conexión TCP / SSL Pooler: Puerto 5273 - IPv4)
                      |
 +--------------------v--------------------------------+
-|  [Contenedor Docker: menu_digital_db]               |
-|  (Puerto Interno Docker: 3306)                      |
+|           [CLOUD: Supabase PostgreSQL]              |
 |                                                     |
-|                    (MariaDB)                        |
-|   - Gestión de Volumen: mariadb_data                |
+|         - Cluster Remoto en la Nube                 |
+|         - Persistencia Centralizada (auth_user, etc)|
+|         - Connection Pooler (PgBouncer)             |
 +-----------------------------------------------------+
 ```
-*También corre en paralelo (separado del backend principal) el contenedor administrador **phpMyAdmin** expuesto al puente `8080` de tu red local, enlazado puramente a MariaDB para visualización rápida.*
 
 ---
 
@@ -83,29 +93,29 @@ El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arqui
 
 ```text
 menu-digital/
-├── .env                       # Variables orquestación maestras (MariaDB Passwords, Puertos Anfitrión)
+├── .env                       # Variables de orquestación host mínimas (Puertos Anfitrión: BACKEND_PORT, FRONTEND_PORT)
 ├── .gitignore                 # Filtro general contra subida inintencionada de secretos y dependencias
-├── docker-compose.yml         # Archivo Declarativo de Orquestación y redes Docker 
-├── informe_tecnico_estado_actual.md  # (Este reporte técnico de contexto)
+├── docker-compose.yml         # Archivo declarativo de orquestación Docker (Backend + Frontend desacoplados)
+├── informe_tecnico_estado_actual.md  # Reporte técnico de contexto y evolución del proyecto
 │
 ├── backend/                   # Componente API y Lógica de Negocios (Django)
-│   ├── .env                   # Secretos y credenciales de acceso DB / Cloudinary EXCLUSIVOS para Django
-│   ├── Dockerfile             # Secuencia de compilado para imagen Python Slim Linux
-│   ├── requirements.txt       # Gestor de librerías Python e importaciones base PIP
+│   ├── .env                   # Credenciales maestras (Supabase PostgreSQL, Secret Key, Cloudinary)
+│   ├── Dockerfile             # Secuencia de compilado Python 3.11-slim Linux con libpq-dev
+│   ├── requirements.txt       # Dependencias PIP (Django, DRF, psycopg2-binary, SimpleJWT, etc.)
 │   ├── manage.py              # Ejecutable principal de utilerías en Django
-│   ├── core/                  # Carpeta Maestro: Configuraciones de seguridad, Django JWT y rutas raíz
-│   └── menu/                  # Aplicación de Django en donde radican funciones, vistas y el futuro sistema de menús
+│   ├── core/                  # Módulo Maestro: Settings (PostgreSQL engine), URLs raíz y JWT
+│   └── menu/                  # Aplicación de negocio para endpoints y modelos del menú
 │
 └── frontend/                  # Componente Cliente / UI (ReactJS + Vite)
     ├── .dockerignore          # Anulación de mapeo local 'node_modules' para proteger Build Docker
     ├── .env                   # Variables públicas para conexión API (`VITE_API_URL`)
-    ├── Dockerfile             # Secuencia de compilado basada en imagen ultra ligera (Node Alpine)
+    ├── Dockerfile             # Secuencia de compilado basada en Node Alpine
     ├── package.json           # Resolutor de dependencias NPM y scripts locales ('npm run dev')
-    ├── vite.config.js         # Configuraciones de enrutamiento Vite (Activación Hot-Reloading Watcher para Docker)
-    └── src/                   # Source de la UI donde habita el ecosistema visual
-        ├── App.css            # Estilos (en un futuro la base estética visual)
-        ├── App.jsx            # Punto de entrada primario modificado consumiendo el endpoint DRF Base de Python
-        └── main.jsx           # Proyector general de la interfaz gráfica a index.html
+    ├── vite.config.js         # Configuración Vite (Hot-Reloading Watcher con Polling para Docker)
+    └── src/                   # Código fuente de la interfaz gráfica
+        ├── App.css            # Estilos CSS Vanilla
+        ├── App.jsx            # Punto de entrada primario consumiendo el endpoint DRF Base
+        └── main.jsx           # Proyección de la interfaz gráfica a index.html
 ```
 
 ---
@@ -113,45 +123,54 @@ menu-digital/
 ## 5. Ecosistema de Docker
 
 ### docker-compose.yml
-- Unifica de manera sincrónica 4 contenedores (`db`, `phpmyadmin`, `backend`, `frontend`). Centraliza el mapeo de puertos hacia la PC y distribuye variables mediante el `.env` raíz oculto.
+- Orquesta de forma desacoplada y eficiente los dos microservicios principales (`backend` y `frontend`).
+- Se eliminaron los contenedores locales `db` (MariaDB) y `phpmyadmin`, reduciendo significativamente el consumo de memoria RAM y CPU en el entorno de desarrollo.
+- Se removió la directiva `depends_on: db`, permitiendo que el backend de Django arranque de forma 100% independiente y estable sin bloqueos de espera a sockets locales.
+- Centraliza la inyección de puertos hacia el host mediante el archivo `.env` raíz.
 
 ### Dockerfile (Backend)
-- Imagen Base: `python:3.11-slim` garantizando peso liviano enfocado en Debian.
-- Acarrea dependencias Linux (libmysqlclient-dev, build-essential) necesarias para compilar internamente las conexiones al hardware desde Python MySQLClient.
-- Protege bloqueos anulando ficheros basura temporales `__pycache__` gracias a `PYTHONDONTWRITEBYTECODE`.
+- **Imagen Base:** `python:3.11-slim` basada en Debian, manteniendo una huella ligera y segura.
+- **Dependencias del Sistema:** Se sustituyó `libmysqlclient-dev` por `libpq-dev`, junto con `build-essential` y `pkg-config`, garantizando las cabeceras nativas de C necesarias para compilar y ejecutar el driver PostgreSQL (`psycopg2-binary`).
+- **Optimización de Python:** Incluye `PYTHONDONTWRITEBYTECODE=1` y `PYTHONUNBUFFERED=1` para evitar generación de archivos temporales `.pyc` y permitir la transmisión directa de logs a la consola de Docker.
 
 ### Dockerfile (Frontend)
-- Imagen Base: `node:20-alpine` (Peso mínimo optimizando red y transferencias).
+- **Imagen Base:** `node:20-alpine` (peso mínimo optimizando la transferencia y arranque).
 - Separa estrictamente la compilación construyendo `node_modules` directo dentro de la imagen aislada sin involucrar a Windows.
 - Inicia el servidor Vite con el parámetro `--host` forzándolo a emitir su interfaz al puerto puente 5173 abierto (0.0.0.0).
 
-### Redes
-- *Default Bridge*: Red virtual interna gestionada dinámicamente por docker-compose mediante DNS internos. Ejemplo: El backend nunca requiere saber la IP de MariaDB, simplemente apunta a su variable host nominal `db`.
+### Redes y Conectividad
+- *Default Bridge*: Red virtual interna gestionada por Docker que comunica frontend y backend.
+- *Acceso a Nube Externa*: El contenedor backend utiliza la resolución DNS y conectividad hacia internet para enlazar el Connection Pooler de Supabase en el puerto 5273 (IPv4).
 
 ### Volúmenes
-- `mariadb_data`: Volumen estricto en disco físico que ancla permanentemente el trabajo de la DB al sistema subyacente impidiendo amnesia de borrado al apagarse Docker (Data Persistence real en `/var/lib/mysql`).
-- Montajes Locales Vivos (`./backend:/app` y `./frontend:/app`): Bind mounts inmediatos. Todo código modificado en el IDE se inyecta nativamente durante la corrida de los contenedores ahorrando Re-builds intensivos.
-- `/app/node_modules` (En Frontend): Volumen anónimo "escudo" en el Compose. Fuerza a Docker a favorecer su propia carpeta nativa npm de Linux, bloqueando así cualquier superposición o daño cruzado por binarios de Windows si el usuario instalare Node exteriormente.
+- **Eliminación de volumen `mariadb_data`:** Ya no se requiere almacenamiento persistente local para base de datos; la data reside de forma íntegra y segura en la infraestructura cloud de Supabase.
+- **Montajes Locales Vivos (`./backend:/app` y `./frontend:/app`):** Bind mounts directos. Todo cambio en el código se refleja en caliente sin necesidad de reconstruir imágenes.
+- **Volumen Anónimo `/app/node_modules` (Frontend):** Escudo en compose para proteger las dependencias Linux de interferencias con binarios del host Windows.
 
 ---
 
 ## 6. Variables de Entorno
 
-### Raíz (`./.env`) - *Infraestructura*
-- `MYSQL_ROOT_PASSWORD`: Contraseña para usuario root en MariaDB.
-- `MYSQL_DATABASE`: Nombre de DB maestra `menu_digital`.
-- `MYSQL_USER`, `MYSQL_PASSWORD`: Credenciales secundarias acotadas otorgadas al backend para su enlace.
-- `DB_PORT`, `PMA_PORT`, `BACKEND_PORT`, `FRONTEND_PORT`: Puertos base de la máquina anfitriona usados para aislar hardcoding exterior.
+### Raíz (`./.env`) - *Infraestructura y Puertos del Host*
+Estructura minimalista orientada exclusivamente a la exposición y aislamiento de puertos locales:
+- `BACKEND_PORT`: Puerto expuesto en el host para la API de Django (ej. `8000`).
+- `FRONTEND_PORT`: Puerto expuesto en el host para el servidor Vite de React (ej. `5173`).
 
-### Backend (`./backend/.env`) - *Django Settings*
-- `DEBUG`: '1' si deseamos ver volcado de logs (Traza roja temporal) y no un fatal White-Screen error en producción.
-- `SECRET_KEY`: Llave encriptadora de Tokens y Semilla criptográfica del OS.
-- Variables Relacionales de DB: `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` (Replicación y ruteo transaccional desde OS).
-- Placeholders Cloudinary: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
+### Backend (`./backend/.env`) - *Credenciales Maestras y Django Settings*
+Contiene la configuración de seguridad y las credenciales directas de conexión al cluster remoto de Supabase:
+- `DEBUG`: Bandera booleana de depuración (`1` en desarrollo).
+- `SECRET_KEY`: Semilla criptográfica maestra para firma de tokens y seguridad de Django.
+- `DB_ENGINE`: Motor de base de datos relacional (`django.db.backends.postgresql`).
+- `DB_NAME`: Nombre de la base de datos en Supabase (típicamente `postgres`).
+- `DB_USER`: Usuario autenticado de PostgreSQL (ej. `postgres` o usuario de pooler).
+- `DB_PASSWORD`: Contraseña maestra del proyecto en Supabase.
+- `DB_HOST`: Host remoto del pooler de Supabase (ej. `aws-0-[region].pooler.supabase.com`).
+- `DB_PORT`: Puerto del Connection Pooler optimizado para IPv4 (`5273` / `6543`).
+- *Placeholders Cloudinary:* `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`.
 
-### Frontend (`./frontend/.env`) - *Web Client*
-- `VITE_API_URL`: Dirección maestra de API DRF. Su valor predeterminado es en `http://localhost:8000/api`.
-- Placeholders Cloudinary: `VITE_CLOUDINARY_CLOUD_NAME`, `VITE_CLOUDINARY_UPLOAD_PRESET`.
+### Frontend (`./frontend/.env`) - *Configuración del Cliente Web*
+- `VITE_API_URL`: URL base del backend DRF para consumo desde el navegador (`http://localhost:8000/api`).
+- *Placeholders Cloudinary:* `VITE_CLOUDINARY_CLOUD_NAME`, `VITE_CLOUDINARY_UPLOAD_PRESET`.
 
 ---
 
@@ -160,113 +179,123 @@ menu-digital/
 ### Backend
 | Paquete | Versión Esperada | Función Primaria |
 |---|---|---|
-| `Django` | `^5.0.x` | Base de framework monolítica. ORM |
-| `djangorestframework` | `^3.14.x` | Conversión fácil a Arquitectura REST e injerto JSONs/Serializadores |
-| `djangorestframework-simplejwt` | `^5.3.x` | Tokenización de usuarios y resguardo de sesiones bajo Headers sin guardar memoria ("Stateless"). Endpoints preconstruidos login/refresh |
-| `mysqlclient` | `^2.2.x` | Driver oficial de conexión rápida Python-C y compatibilidad MariaDB |
-| `django-cors-headers` | `^4.3.x` | Liberador del CORS para soportar dominios cruzados en interacciones de red React -> Django |
-| `python-dotenv` | `^1.x.x` | Inyector virtual que absorbe textos del .env y los expone al diccionario `os` Python nativo. |
+| `Django` | `^5.0.x` | Framework web base con ORM relacional robusto. |
+| `djangorestframework` | `^3.14.x` | Construcción de API REST, serializadores y controladores JSON. |
+| `djangorestframework-simplejwt` | `^5.3.x` | Autenticación stateless mediante tokens de acceso y refresco JWT. |
+| `psycopg2-binary` | `^2.9.x` | Driver PostgreSQL de alto rendimiento para comunicación con Supabase. |
+| `django-cors-headers` | `^4.3.x` | Middleware para gestión de permisos CORS entre React y Django. |
+| `python-dotenv` | `^1.0.x` | Carga e inyección de variables de entorno desde `.env` al entorno `os`. |
 
 ### Frontend
 | Paquete | Versión Esperada | Función Primaria |
 |---|---|---|
-| `react` | Default Vite | Manejo de componentes dinámicos en entorno Virtual DOM |
-| `react-dom` | Default Vite | Empate profundo de renderizado general para el Front Browser (Indexado DOM final) |
-| `vite` | Default Vite | Servidor local ultra veloz que reemplaza la antigua barrera y enrutador HMR de Webpack |
-| `@vitejs/plugin-react` | Default Vite | Enlace plugin oficial que acopla Vite con la sintaxis .JSX y babel react compilador inferior |
+| `react` | Default Vite | Biblioteca para renderizado declarativo y gestión de componentes UI. |
+| `react-dom` | Default Vite | Integración y manipulación del árbol DOM para la aplicación React. |
+| `vite` | Default Vite | Entorno de desarrollo ultrarrápido y empaquetador con HMR instantáneo. |
+| `@vitejs/plugin-react` | Default Vite | Plugin oficial de soporte JSX/Fast Refresh con Babel para React en Vite. |
 
 ---
 
 ## 8. Configuraciones Destacadas Realizadas
 
-- **CORS (Django):** Se modificó `settings.py` integrando `corsheaders.middleware.CorsMiddleware` y activando `CORS_ALLOW_ALL_ORIGINS = True` para habilitar peticiones HTTP en un esquema Host-to-Host abierto bajo entorno de Desarrollo local puro.
-- **JWT (Config. DRF):** En `settings.py` el bloque `REST_FRAMEWORK` ordenó como clase principal `JWTAuthentication`, imponiendo Tokens bajo un prefijo HTTP genérico (Bearer). Caducidades temporales encriptadas: Acceso = 60 Minutos. Refresco = 1 Día Entero (24H).
-- **Polling HR (Vite/Docker):** Se inyectaron comandos en `vite.config.js` y `docker-compose.yml` introduciendo `watch: { usePolling: true }` y `CHOKIDAR_USEPOLLING`. Permite notificaciones estables de salvaguardas (HMR fluído transfronterizo) dado que Docker en Windows y los adaptadores WSL2 sufren de pérdida de ping interno de avisos I/O (File-System Events).
+- **Conexión a Supabase Cloud & Connection Pooling (PostgreSQL):** En `settings.py` se parametrizó el bloque `DATABASES` bajo el motor `django.db.backends.postgresql`, alimentado dinámicamente por las variables de entorno de `backend/.env`. Se configuró la conexión a través del Connection Pooler de Supabase (puerto 5273) garantizando resolución IPv4 limpia desde contenedores Docker ejecutados bajo Windows/WSL2.
+- **CORS (Django):** Inclusión de `corsheaders.middleware.CorsMiddleware` y activación de `CORS_ALLOW_ALL_ORIGINS = True` en `settings.py` para permitir tráfico libre de peticiones en entorno de desarrollo.
+- **JWT (Configuración DRF):** Configuración en `settings.py` estableciendo `JWTAuthentication` como esquema predeterminado en `REST_FRAMEWORK`, con expiración de 60 minutos para Access Tokens y 24 horas para Refresh Tokens.
+- **Polling HMR (Vite / Docker en Windows):** Inyección de `watch: { usePolling: true }` en `vite.config.js` y `CHOKIDAR_USEPOLLING=true` en `docker-compose.yml`, solucionando la pérdida de eventos I/O del sistema de archivos entre el host Windows y el kernel virtualizado de Docker/WSL2.
 
 ---
 
 ## 9. Funcionalidades Implementadas
 
 ### Handshake Bidireccional (Punto/Endpoint de Prueba)
-- **Objetivo:** Auditar conexión física de red completa Django a React.
+- **Objetivo:** Auditar y verificar el enlace de red completo entre React y Django.
 - **Archivos:** `backend/menu/views.py`, `backend/menu/urls.py`, `backend/core/urls.py`, `frontend/src/App.jsx`.
-- **Funcionamiento:** React usando hooks primordiales (`useEffect`) hace `fetch` al servidor en el endpoint `/api/test/` de Django. Este despacha `JsonResponse` dictando "¡Hola...". React asimila esto vía promesas `response.json()` desmenuzándolo e iterándolo en la UI, descartando el cargador ("Cargando...").
+- **Funcionamiento:** React realiza una petición `fetch` al endpoint `/api/test/` de Django mediante el hook `useEffect`. La respuesta en formato JSON es procesada de manera reactiva y presentada en pantalla, eliminando el estado de carga inicial.
 
-### Generación Endpoints JWT Nativos & Setup de Usuarios
-- **Objetivo:** Adjudicar la pasarela de Login que despachará credenciales de Acceso y Refresco protegiendo rutas venideras con Tokens de alta encriptación.
-- **Archivos:** `backend/core/urls.py`, Base De Datos MariaDB `auth_user` migrada interna.
-- **Funcionamiento:** DRF anida `TokenObtainPairView` sobre la ruta unificada de Seguridad, escuchando métodos POST. (Fue además integrado un superusuario nativo `admin` programáticamente).
+### Endpoints JWT y Persistencia Remota de Usuarios
+- **Objetivo:** Disponer de autenticación basada en tokens JWT con persistencia en la base de datos cloud.
+- **Archivos:** `backend/core/urls.py`, base de datos remota Supabase (tabla `auth_user`).
+- **Funcionamiento:** Endpoint `TokenObtainPairView` expuesto para generación de pares de tokens (Access/Refresh). Las migraciones base de Django (`auth`, `contenttypes`, `sessions`, `admin`) fueron ejecutadas directamente sobre el cluster de Supabase, quedando los usuarios administrativos disponibles globalmente.
 
 ---
 
 ## 10. Problemas Encontrados y Soluciones Documentadas
 
-1. **Daemon Docker Engine Offline**
-   - **Causa:** En ejecución de Orquestamiento (`docker compose up`) el motor virtual arrojó la traza `failed to connect to the docker API at npipe...`.
-   - **Solución Aplicada:** Acción natural del usuario habilitando el ejecutable raíz y Daemon oficial general con interfaz GUI (Docker Desktop) encendiendo contenedores Windows Node de manera regular.
-   - **Aprendizaje:** Comandos orquestados obligan al Engine local a estar abierto y activo a nivel sistémico para enjutar el sub-kernel Unix.
+1. **Resolución DNS y Compatibilidad IPv4 en Docker/WSL2 hacia Supabase**
+   - **Causa:** Conexiones directas al host principal de PostgreSQL en Supabase pueden fallar o presentar latencias severas dentro de contenedores Docker en Windows debido a problemas de resolución de nombres IPv6/IPv4 en WSL2.
+   - **Solución Aplicada:** Enrutamiento a través del Connection Pooler de Supabase utilizando el puerto `5273` (con soporte explícito IPv4), asegurando conexiones estables y reducción del overhead de sockets en cada consulta del ORM.
+   - **Aprendizaje:** Al conectar contenedores de desarrollo en Windows hacia servicios de bases de datos DBaaS, utilizar siempre el pooler de conexiones con transporte IPv4 garantizado.
 
-2. **Error de Symlinks .BIN en Build de Contenedores Frontend**
-   - **Causa:** Error durante compilación `invalid file request node_modules/.bin/...`. Al ejecutar `COPY . .` desde Dockerfile, el proceso integró e intentó replicar los archivos Windows-Sys locales, colisionando con los symlinks nativos del contenedor Alpine OS (Linux).
-   - **Solución Aplicada:** Configuración del estricto listado en fichero `.dockerignore` protegiendo `node_modules/`. Habilitando a la capa Alpine un `RUN npm install` de primerísimo nivel con apoyo de volumen vacío/Anónimo aislado.
-   - **Aprendizaje:** Interdependencias de lenguajes (`node_modules`, `venv`) nunca pueden ser montadas o transferidas nativamente de un host Windows al guest de Linux directamente durante un `docker build` en operaciones trans-OS, pues la arquitectura (binarios ELF vs EXE/Symlinks) difiere. 
+2. **Daemon Docker Engine Offline**
+   - **Causa:** En ejecución de `docker compose up` el motor virtual arrojó el error `failed to connect to the docker API at npipe...`.
+   - **Solución Aplicada:** Inicio formal del servicio y GUI de Docker Desktop en el sistema operativo anfitrión.
+   - **Aprendizaje:** Las utilidades de CLI de Docker requieren que el daemon anfitrión esté activo a nivel de sistema para interactuar con el hipervisor WSL2.
 
-3. **Alerta "Obsolete Version" en YAML**
-   - **Causa:** `docker-compose.yml` poseía encabezado `version: '3.8'` arrojando alertas amarillas bajo ejecuciones de consola actual (Docker Compose V2 Standard).
-   - **Solución Aplicada:** Eliminación del metadato obsoleto.
+3. **Error de Symlinks .BIN en Build de Contenedores Frontend**
+   - **Causa:** Conflicto durante el build al intentar copiar la carpeta local de `node_modules/` de Windows hacia la imagen Alpine Linux (`invalid file request node_modules/.bin/...`).
+   - **Solución Aplicada:** Configuración del archivo `.dockerignore` para excluir `node_modules/` y utilización de un volumen anónimo en `docker-compose.yml`, permitiendo a Alpine compilar sus propios binarios nativos vía `npm install`.
+   - **Aprendizaje:** Las dependencias dependientes del OS no deben compartirse entre host Windows y huésped Linux.
+
+4. **Alerta "Obsolete Version" en YAML**
+   - **Causa:** Encabezado `version: '3.8'` obsoleto bajo la especificación Docker Compose V2.
+   - **Solución Aplicada:** Eliminación del atributo superior `version` en `docker-compose.yml`.
 
 ---
 
 ## 11. Decisiones Técnicas y Justificación
 
-1. **Aislamiento `.env` Escalado (Tri-Folder Setup)**
-   - *Decisión:* Separar el archivo maestro de secretos en tres capas: Raíz para el SysAdmin (Docker); Backend para Python; Frontend preconfigurador.
-   - *Justificación:* Prevención total de fugas en React exponiendo claves SQL por error. Facilidad de portar contenedores individualmente.
-2. **Volcado Efímero y Auto-Scaffolding**
-   - *Decisión:* Construir bases (React App, Django Base) directamente desde comandos encapsulados en contenedores transitorios auto-destructibles en lugar de local.
-   - *Justificación:* Mantuvo purista y virgen la computadora del usuario logrando las directivas formales de "No Local Dependencies OS Installation".
-3. **Omisión Integración SQL Lite (Local Storage)**
-   - *Decisión:* Edición forzada nativa del Settings obligando desde la primer consulta el enrutamiento a MariaDB en vez del estándar `sqlite3` de Django.
-   - *Justificación:* El prototipado directo con MariaDB revela de inmediato cualquier imperfección de compatibilidad en campos (Como JSONFields / String constraints) que SQLite ocultaría en desarrollo.
-4. **Cloudinary (Arquitectura Frontend Upload Ponderada)**
-   - *Decisión:* Estructurar variables Frontend y Backend para Cloudinary, planificando subir los videos interactivos directamente desde el navegador (React).
-   - *Justificación:* Evita usar Django como 'Coyote' transportador. Ahorra ancho de banda monumental sobre nuestro backend no consumiendo transfer-rate. Acelera descargas nativas del celular cliente al servidor multimedia Cloudinary.
+1. **Migración a Base de Datos en la Nube (Supabase PostgreSQL vs MariaDB Local)**
+   - *Decisión:* Sustituir el contenedor local de MariaDB y phpMyAdmin por una instancia gestionada de Supabase PostgreSQL conectada mediante Connection Pooler.
+   - *Justificación:* Permite sincronización transparente entre múltiples dispositivos de desarrollo sin necesidad de exportar e importar volcados SQL manualmente. Elimina sobrecarga de memoria en Docker local y aprovecha las capacidades avanzadas de PostgreSQL para futuras características del menú (soporte nativo JSONB, búsquedas full-text y triggers).
+2. **Aislamiento de Variables de Entorno en 2 Capas (.env)**
+   - *Decisión:* Separar estrictamente el archivo raíz `.env` (exclusivo para mapeo de puertos Docker) del archivo `backend/.env` (credenciales maestras de base de datos y Django).
+   - *Justificación:* Previene exposición de credenciales de infraestructura a la capa cliente y permite desacoplar los parámetros de host de los secretos de la aplicación.
+3. **Compilación de Dependencias Nativas en Dockerfile Backend**
+   - *Decisión:* Integrar `libpq-dev` en la imagen base `python:3.11-slim`.
+   - *Justificación:* Requerido para enlazar correctamente las librerías compartidas de PostgreSQL con `psycopg2-binary`, garantizando estabilidad en transacciones concurrentes.
+4. **Cloudinary para Gestión Multimedia Descentralizada**
+   - *Decisión:* Planificar la subida y almacenamiento de videos e imágenes de platillos directamente a Cloudinary.
+   - *Justificación:* Libera al backend de Django del procesamiento y almacenamiento de pesados archivos de video, reduciendo el consumo de ancho de banda y acelerando la entrega de contenido multimedia optimizado al frontend.
 
 ---
 
 ## 12. Estado Actual (Detallado)
 
 ### 🟢 ¿Qué SI Funciona Ahora Mismo?
-- El ecosistema Docker en la PC del equipo (Infraestructura 4 Capas y Red puente transoceánica operativa).
-- El backend procesa CORS, devuelve respuestas 200 (Test Fetch Ok) y procesa criptografía JWT en 4 decimas de seg (`/api/token`).
-- El Servidor Vite acalla latencias y actualiza el código en el Virtual DOM en tiempo real visual (HMR) gracias a "Polling Config".
-- La Base de Datos recibe inputs, posee el primer paquete de migraciones aplicadas (Autorización y Auth Groups) y el Panel Web de PHPMyAdmin las revisa nativamente para QA/Debugger.
+- **Infraestructura de 2 Capas en Docker:** Contenedores `backend` y `frontend` orquestados de forma ágil y ligera.
+- **Conectividad Cloud a Supabase:** Backend conectado al cluster PostgreSQL mediante Connection Pooler (puerto 5273) con migraciones iniciales aplicadas exitosamente.
+- **Autenticación JWT:** Generación y validación de tokens de acceso y refresco con persistencia en la tabla remota `auth_user`.
+- **Handshake Frontend-Backend:** Comunicación API REST verificada con respuesta JSON y renderizado dinámico en React.
+- **Hot Module Replacement (HMR):** Recarga instantánea en React configurada con polling para entorno Windows/WSL2.
 
 ### 🔴 ¿Qué Falta de Implementar?
-- **Modelos Arquitectónicos Reales (DB):** Aún el Backend está hueco respecto a reglas de negocio. No existen tablas de Categorías, Menús, Comida, etc.
-- **Implementación Cloudinary Expresa:** La nube multimedia solo fue "Planificada" para fácil inyección pero aún no está corriendo porque los modelos lógicos de Django en Platos con campos `File/Video Field` que recibirían estas interacciones no están escritos aún.
-- **Zustand Estatal Global:** Requerimiento inicial; gestor fundamental que alojará categorías del menú a nivel RAM/Estado cliente global de React no se ha instalado ni instanciado.
+- **Modelos de Negocio del Menú:** Creación de modelos relacionales en Django para Categorías, Platillos, Variantes, Alérgenos y Precios.
+- **Endpoints CRUD y Serializadores DRF:** Desarrollo de ViewSets y Serializers para la gestión completa de las cartas y menús digitales.
+- **Integración Activa con Cloudinary:** Implementación de subida de video y multimedia en los modelos de Django y componentes de React.
+- **Estado Global con Zustand:** Integración del store en React para gestión de categorías activas, filtros y experiencia de usuario fluida.
+- **Sistema de Diseño Visual (CSS Vanilla):** Implementación de la estética visual rica (Dark Mode, micro-animaciones, diseño premium sin Tailwind).
 
 ---
 
 ## 13. Próximos Pasos Priorizados
 
-1. **Diseñar Modelos Transaccionales Básicos de Django.** (Importancia: Crítico).
-   *Por qué:* Todo Menú Digital dicta su lógica y fluidez desde las tablas relacionales SQL. Tienen que construirse (Ej, Modelo Categoría, Modelo Platillo "Dish"). Definir si las variaciones (Grande, Pequeña de un Plato) existirán.
-2. **Crear Viewsets, Endpoints CRUD & API REST via DRF.** (Importancia: Crítico / Medio).
-   *Por qué:* Convertir estos Modelos recién estructurados (Paso A) en canales de distribución JSON manejables (Serializadores y Controladores). El frontend debe poder consumirlos dinámicamente y no solo ver un test estático.
-3. **Consolidar Diseño, Estructura CSS Vanilla base.** (Importancia: Media Superior).
-   *Por qué:* El usuario exigió que "No hubiere TailwindCSS", sino "Rich CSS Aesthetics, micro animaciones y Dark Modes atractivos". Un sistema de diseño tipográfico y variables de color base debe nacer en el frontend con máxima prioridad visual si queremos "Wow".
-4. **Integrar Cloudinary Físico (Instalación Cloudinary-Storage).** (Importancia: Táctica).
-   *Por qué:* Es requerido instanciar los componentes multimedia en el Gestor Django de Backoffice apenas estén formados los modelos platillo, conectando las keys ocultas de .env.
-5. **Configurar Global State Management UI (Zustand).** (Importancia: Optimizador de Fluidez).
-   *Por qué:* Proveer un ecosistema de carritos de compras o listados persistentes fluidos.
+1. **Diseñar los Modelos Relacionales del Menú en Django** (Importancia: Crítica)
+   - Definir tablas para `Category`, `Dish`, `DishMedia` y `PriceVariant` con validaciones e índices apropiados.
+2. **Crear ViewSets, Serializers y Rutas de la API REST** (Importancia: Crítica)
+   - Exponer endpoints CRUD protegidos para administradores y endpoints de solo lectura públicos para clientes del restaurante.
+3. **Consolidar el Sistema de Diseño en CSS Vanilla** (Importancia: Alta)
+   - Diseñar una paleta cromática sofisticada, tipografías modernas (Google Fonts), animaciones sutiles y modo oscuro de alto impacto visual.
+4. **Implementar Gestión de Estado con Zustand en React** (Importancia: Media-Alta)
+   - Configurar stores para almacenar el catálogo en memoria, filtros por categorías y persistencia de preferencias de usuario.
+5. **Vincular Carga y Reproducción de Videos con Cloudinary** (Importancia: Media)
+   - Conectar los campos multimedia de platillos con Cloudinary para reproducción optimizada en el frontend.
 
 ---
 
 ## 14. Recomendaciones Finales para el Desarrollo
-- **Persistencia Base en GitHub Inmediata:** Correr `git add .` seguido de `git commit -m "feat: Orquestamiento Maestro Backend-Frontend y DB Creado"` en el primer minuto. Hay que salvaguardar esta joya de estructura hoy mismo.
-- **Paginación Global y Performance en DRF:** Aplicar `PAGE_SIZE` global en config DRF apenas se hagan modelos de platillos masivos. Para que el Restaurante no colapse React al mandar 1400 platos del menú de golpe sobre la red.
-- **Uso Estricto de "Unique IDs":** En los maquetados CSS del Paso B de Front-End, obligar el uso de idenficadores unívocos, cumpliendo la regla de indexación SEO estricta y preparándolo para Testing End-2-End como Playwright.
+- **Versionamiento Continuo en Git:** Mantener commits descriptivos para cada hito de refactorización y avance funcional.
+- **Paginación y Optimización de Consultas:** Implementar `select_related` y `prefetch_related` en el ORM de Django junto con paginación estándar para asegurar respuestas ultrarrápidas al consultar menús extensos en Supabase.
+- **IDs Únicos y Accesibilidad:** Mantener identificadores únicos en los elementos interactivos del frontend para pruebas automatizadas (E2E) y buenas prácticas de accesibilidad web.
 
-No se aplicó Tailwind bajo el requerimiento explícito del proyecto en las peticiones del prompt original y se mantuvo apego irrestricto a los 10 pasos solicitados de Arquitectura. Todo desarrollo está listo para escalamiento inmediato.
+---
+*Documento técnico actualizado para reflejar el estado actual del repositorio tras la refactorización a Supabase y optimización de Docker Compose.*
