@@ -5,6 +5,7 @@
 | --- | --- | --- |
 | 1.0 | 03/08/2026 | Documento inicial. Infraestructura y setup del proyecto. |
 | 1.1 | 13/08/2026 | Refactorización de infraestructura: Migración de base de datos a Supabase (PostgreSQL), optimización de Docker y actualización de dependencias de Django. |
+| 1.2 | 13/08/2026 | Desarrollo de Fase 1 Frontend: Maquetación de login, estado global con Zustand, mock de autenticación y optimización UI/UX. |
 
 ---
 
@@ -12,7 +13,7 @@
 - **Nombre del proyecto:** Menú Digital
 - **Objetivo del proyecto:** Plataforma web para restaurantes donde los clientes puedan consultar un menú digital y los platos se presenten de forma atractiva, integrando reproducción de video multimedia.
 - **Descripción funcional:** Sistema asíncrono y desacoplado, compuesto por una API REST segura para la administración (backend) y una interfaz de usuario reactiva y dinámica (frontend). Todo ejecutado sobre tecnología de contenedores ligeros con persistencia en la nube.
-- **Estado actual del desarrollo:** Fase de *Infraestructura y Refactorización Cloud completada*. La arquitectura base, orquestación en Docker desacoplada, base de datos PostgreSQL en Supabase Cloud y tests de conexión Frontend-Backend están funcionales e implementados exitosamente.
+- **Estado actual del desarrollo:** Fase de *Infraestructura Cloud y Frontend Fase 1 completadas*. La arquitectura base, orquestación en Docker desacoplada, base de datos PostgreSQL en Supabase Cloud, flujo de autenticación en frontend (Zustand + Mock) e interfaz visual refinada están implementados exitosamente.
 - **Fecha del informe:** 13 de Agosto de 2026.
 
 ---
@@ -21,7 +22,7 @@
 
 ### Frontend
 - **Herramienta:** React configurado con Vite.
-- **Razón:** React es líder en construcción de interfaces de usuario robustas. Vite reemplaza a Webpack, reduciendo los tiempos de construcción ("build") a un milisegundo e integrando "Hot Module Replacement" (HMR) ultrarrápido. Estilos se aplicarán en CSS Vanilla y Zustand para estados bajo petición.
+- **Razón:** React es líder en construcción de interfaces de usuario robustas. Vite reemplaza a Webpack, reduciendo los tiempos de construcción ("build") a un milisegundo e integrando "Hot Module Replacement" (HMR) ultrarrápido. Estilos aplicados mediante CSS Modules (Vanilla) para encapsulamiento estricto, Zustand para gestión de estado global y tipografías autohospedadas mediante `@fontsource`.
 
 ### Backend
 - **Herramienta:** Python (Django) con Django REST Framework (DRF).
@@ -40,6 +41,8 @@
 - **Razón:** Indispensable. Permite el versionamiento lineal, auditar cambios de código y el trabajo descentralizado o en equipo (GitHub).
 
 ### Otras Herramientas
+- **Gestión de Estado (Frontend):** `zustand` (State manager ultraligero y desacoplado).
+- **Tipografía Autohospedada:** `@fontsource/fraunces`, `@fontsource/inter`, `@fontsource/ibm-plex-mono`.
 - **Gestión de variables:** `python-dotenv` (Backend), Inyección nativa `import.meta.env` (Frontend).
 - **Seguridad:** JWT (JSON Web Tokens) gestionado mediante `djangorestframework-simplejwt`.
 - **Driver de Base de Datos:** `psycopg2-binary` para comunicación optimizada entre Django y el cluster PostgreSQL de Supabase.
@@ -52,6 +55,7 @@
 ### Diseño
 El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arquitectura Limpia basada en contenedores y servicios Cloud**:
 - Los microservicios locales (Frontend y Backend) operan en contenedores Docker independientes.
+- El frontend gestiona su propio estado reactivo local/global mediante Zustand y módulos CSS encapsulados.
 - El backend se comunica de forma segura mediante SSL/TLS con el cluster gestionado de **Supabase (PostgreSQL)** en la nube a través de su Connection Pooler.
 - El desacoplamiento es total: el backend no depende de un contenedor de base de datos local para inicializarse.
 
@@ -59,32 +63,35 @@ El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arqui
 ```text
            (Puerto Anfitrión: 5173 - Navegador Local)
                            |
-+--------------------------|--------------------------+
-|  [Contenedor Docker: menu_digital_frontend]         |
-|                          |                          |
-|         (React + Vite - Servidor de UI)             |
-+--------------------------|--------------------------+
++--------------------------|-----------------------------------------+
+|  [Contenedor Docker: menu_digital_frontend]                        |
+|                                                                    |
+|         (React + Vite - Servidor de UI / Estado Zustand)           |
+|         - Pages: LoginPage, DashboardPage (CSS Modules)            |
+|         - State: authStore (isAuthenticated, userRole, token)      |
+|         - Services: authService (Mock & Latency Layer)             |
++--------------------------|-----------------------------------------+
                            v
              (Peticiones HTTP: Axios/Fetch)
                            |
-+--------------------------|--------------------------+
-|  [Contenedor Docker: menu_digital_backend]          |
-|  (Puerto Expuesto: 8000)                            |
-|                                                     |
-|                  (Django API REST)                  |
-|    - App: core (Settings, JWT, Configuración)       |
-|    - App: menu (Lógica Transaccional)               |
-+--------------------|--------------------------------+
++--------------------------|-----------------------------------------+
+|  [Contenedor Docker: menu_digital_backend]                         |
+|  (Puerto Expuesto: 8000)                                           |
+|                                                                    |
+|                  (Django API REST)                                 |
+|    - App: core (Settings, JWT, Configuración)                      |
+|    - App: menu (Lógica Transaccional)                              |
++--------------------|-----------------------------------------------+
                      |
          (Conexión TCP / SSL Pooler: Puerto 5273 - IPv4)
                      |
-+--------------------v--------------------------------+
-|           [CLOUD: Supabase PostgreSQL]              |
-|                                                     |
-|         - Cluster Remoto en la Nube                 |
-|         - Persistencia Centralizada (auth_user, etc)|
-|         - Connection Pooler (PgBouncer)             |
-+-----------------------------------------------------+
++--------------------v-----------------------------------------------+
+|           [CLOUD: Supabase PostgreSQL]                             |
+|                                                                    |
+|         - Cluster Remoto en la Nube                                |
+|         - Persistencia Centralizada (auth_user, etc)               |
+|         - Connection Pooler (PgBouncer)                            |
++--------------------------------------------------------------------+
 ```
 
 ---
@@ -110,12 +117,24 @@ menu-digital/
     ├── .dockerignore          # Anulación de mapeo local 'node_modules' para proteger Build Docker
     ├── .env                   # Variables públicas para conexión API (`VITE_API_URL`)
     ├── Dockerfile             # Secuencia de compilado basada en Node Alpine
-    ├── package.json           # Resolutor de dependencias NPM y scripts locales ('npm run dev')
+    ├── package.json           # Resolutor de dependencias NPM (React 19, Zustand, Fontsource)
     ├── vite.config.js         # Configuración Vite (Hot-Reloading Watcher con Polling para Docker)
     └── src/                   # Código fuente de la interfaz gráfica
-        ├── App.css            # Estilos CSS Vanilla
-        ├── App.jsx            # Punto de entrada primario consumiendo el endpoint DRF Base
-        └── main.jsx           # Proyección de la interfaz gráfica a index.html
+        ├── App.css            # Estilos globales y capas de utilidades base
+        ├── App.jsx            # Enrutador declarativo raíz con renderizado condicional por autenticación
+        ├── index.css          # Reset CSS, tokens de color y fuentes autohospedadas
+        ├── main.jsx           # Proyección de la interfaz gráfica a index.html
+        ├── pages/             # Vistas de la aplicación con CSS Modules encapsulados
+        │   ├── Dashboard/     # Vista administrativa protegida
+        │   │   ├── DashboardPage.jsx
+        │   │   └── DashboardPage.module.css
+        │   └── Login/         # Vista de acceso con micro-animaciones
+        │       ├── LoginPage.jsx
+        │       └── LoginPage.module.css
+        ├── services/          # Capa de consumo API y simulación asíncrona
+        │   └── authService.js # Servicio de autenticación con mock de latencia de red
+        └── store/             # Gestores de estado global reactivos
+            └── authStore.js   # Store Zustand para sesión, roles y tokens
 ```
 
 ---
@@ -189,10 +208,14 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 ### Frontend
 | Paquete | Versión Esperada | Función Primaria |
 |---|---|---|
-| `react` | Default Vite | Biblioteca para renderizado declarativo y gestión de componentes UI. |
-| `react-dom` | Default Vite | Integración y manipulación del árbol DOM para la aplicación React. |
-| `vite` | Default Vite | Entorno de desarrollo ultrarrápido y empaquetador con HMR instantáneo. |
-| `@vitejs/plugin-react` | Default Vite | Plugin oficial de soporte JSX/Fast Refresh con Babel para React en Vite. |
+| `react` | `^19.2.x` | Biblioteca para renderizado declarativo y gestión de componentes UI. |
+| `react-dom` | `^19.2.x` | Integración y manipulación del árbol DOM para la aplicación React. |
+| `vite` | `^8.2.x` | Entorno de desarrollo ultrarrápido y empaquetador con HMR instantáneo. |
+| `@vitejs/plugin-react` | `^6.0.x` | Plugin oficial de soporte JSX/Fast Refresh con Babel para React en Vite. |
+| `zustand` | `^5.0.x` | Gestor de estado global reactivo, atómico y libre de boilerplate. |
+| `@fontsource/fraunces` | `^5.3.x` | Tipografía serif display autohospedada para títulos editoriales y branding. |
+| `@fontsource/inter` | `^5.3.x` | Tipografía sans-serif autohospedada para textos y lectura en pantalla. |
+| `@fontsource/ibm-plex-mono` | `^5.3.x` | Tipografía monoespaciada autohospedada para insignias de rol y metadatos. |
 
 ---
 
@@ -202,14 +225,15 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 - **CORS (Django):** Inclusión de `corsheaders.middleware.CorsMiddleware` y activación de `CORS_ALLOW_ALL_ORIGINS = True` en `settings.py` para permitir tráfico libre de peticiones en entorno de desarrollo.
 - **JWT (Configuración DRF):** Configuración en `settings.py` estableciendo `JWTAuthentication` como esquema predeterminado en `REST_FRAMEWORK`, con expiración de 60 minutos para Access Tokens y 24 horas para Refresh Tokens.
 - **Polling HMR (Vite / Docker en Windows):** Inyección de `watch: { usePolling: true }` en `vite.config.js` y `CHOKIDAR_USEPOLLING=true` en `docker-compose.yml`, solucionando la pérdida de eventos I/O del sistema de archivos entre el host Windows y el kernel virtualizado de Docker/WSL2.
+- **Estilos Modulares y Tipografía Local:** Implementación de CSS Modules (`*.module.css`) para aislar estilos a nivel de componente sin colisiones globales. Configuración de importación de fuentes estáticas vía `@fontsource` en `index.css`, asegurando independencia de la red externa y mejor tiempo de render inicial.
 
 ---
 
-## 9. Funcionalidades Implementadas
+## 9. Funcionalidades de Infraestructura y Backend Implementadas
 
 ### Handshake Bidireccional (Punto/Endpoint de Prueba)
 - **Objetivo:** Auditar y verificar el enlace de red completo entre React y Django.
-- **Archivos:** `backend/menu/views.py`, `backend/menu/urls.py`, `backend/core/urls.py`, `frontend/src/App.jsx`.
+- **Archivos:** `backend/menu/views.py`, `backend/menu/urls.py`, `backend/core/urls.py`.
 - **Funcionamiento:** React realiza una petición `fetch` al endpoint `/api/test/` de Django mediante el hook `useEffect`. La respuesta en formato JSON es procesada de manera reactiva y presentada en pantalla, eliminando el estado de carga inicial.
 
 ### Endpoints JWT y Persistencia Remota de Usuarios
@@ -219,7 +243,45 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 
 ---
 
-## 10. Problemas Encontrados y Soluciones Documentadas
+## 10. Estado del Frontend: Fase 1 — Interfaz y Estado
+
+> [!NOTE]
+> **Estado:** Fase 1 — Interfaz y Estado completada exitosamente (código funcional probado en entorno local, pendiente de commit/push en el repositorio Git).
+
+Se implementó la arquitectura base del cliente web en React, consolidando la maquetación visual de acceso, el gestor de estado global y el desacoplamiento con una capa de servicio simulada.
+
+### Elementos Técnicos Construidos
+
+1. **Maquetación y Vistas Modulares:**
+   - **`LoginPage.jsx` y `LoginPage.module.css`:** Interfaz de inicio de sesión refinada con presentación de marca, formulario controlado, manejo de estados de carga (`loading`), estados de deshabilitación interactiva y alertas de error inline contextuales.
+   - **`DashboardPage.jsx` y `DashboardPage.module.css`:** Vista protegida que actúa como placeholder visual y funcional. Permite verificar la reactividad por roles (`superadmin` y `restaurant`), visualizar la sesión activa del usuario y accionar el cierre de sesión (`logout`).
+   - **Aislamiento de Estilos:** Se utilizó la arquitectura de CSS Modules (`.module.css`), garantizando que las clases generadas posean hashes únicos, impidiendo cualquier fuga o colisión de estilos entre pantallas.
+
+2. **Gestión de Estado Global (`authStore.js` con Zustand):**
+   - Se configuró un store centralizado con **Zustand** para orquestar de forma atómica y ligera el ciclo de vida de autenticación.
+   - **Estado Expuesto:** `isAuthenticated` (booleano), `userRole` (admite `'superadmin'` o `'restaurant'`) y `token` (identificador o JWT de sesión).
+   - **Acciones:** `login(userData)` y `logout()`, permitiendo mutaciones de estado limpias sin boilerplate ni reducers complejos.
+   - **Enrutamiento Declarativo:** El componente raíz `App.jsx` se suscribe directamente a `authStore.js` para renderizar condicionalmente `LoginPage` o `DashboardPage` en función de `isAuthenticated`.
+
+3. **Mock de Servicios de Autenticación (`authService.js`):**
+   - Capa de abstracción encargada de interactuar con el login, simulando latencia realista de red (~1.6 segundos) mediante promesas asíncronas (`setTimeout`).
+   - Valida credenciales contra usuarios de prueba preconfigurados (`superadmin` y `restaurant`), retornando tokens mockeados y asignación de roles dinámica.
+   - Gestiona el rechazo controlado de promesas ante credenciales erróneas, permitiendo a la UI capturar y mostrar mensajes de error descriptivos.
+
+4. **Tipografía Local Autohospedada (@fontsource):**
+   - Se erradicó por completo la dependencia de CDNs de terceros (como Google Fonts) para eliminar bloqueos de red y optimizar el First Contentful Paint (FCP).
+   - Se integraron los paquetes `@fontsource/fraunces` (títulos y display con carácter editorial), `@fontsource/inter` (cuerpo de texto e interfaces) y `@fontsource/ibm-plex-mono` (insignias de roles, metadatos y código).
+
+5. **Detalles de UI/UX y Accesibilidad Visual:**
+   - **Micro-interacciones:** Pulso visual sutil en el botón principal de acción (CTA) para invitar a la interacción sin saturar al usuario.
+   - **Contraste y Profundidad:** Fondos elevados con translucidez sutil en inputs y tarjetas, mejorando el contraste según directrices de legibilidad.
+   - **Textura Cinematográfica:** Capa de textura de grano de película implementada mediante un elemento SVG inline no invasivo con `mix-blend-mode: screen` y `pointer-events: none`.
+   - **Animaciones Escalonadas:** Entrada secuencial tipo créditos y animación fluida para el imagotipo/logo mediante keyframes optimizados por GPU (`transform` y `opacity`).
+   - **Accesibilidad Motriz (`prefers-reduced-motion`):** Todas las animaciones, pulsos y transiciones respetan la preferencia del sistema operativo del usuario mediante la media query `@media (prefers-reduced-motion: reduce)`, mitigando efectos de movimiento si el usuario así lo requiere.
+
+---
+
+## 11. Problemas Encontrados y Soluciones Documentadas
 
 1. **Resolución DNS y Compatibilidad IPv4 en Docker/WSL2 hacia Supabase**
    - **Causa:** Conexiones directas al host principal de PostgreSQL en Supabase pueden fallar o presentar latencias severas dentro de contenedores Docker en Windows debido a problemas de resolución de nombres IPv6/IPv4 en WSL2.
@@ -242,60 +304,69 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 
 ---
 
-## 11. Decisiones Técnicas y Justificación
+## 12. Decisiones Técnicas y Justificación
 
 1. **Migración a Base de Datos en la Nube (Supabase PostgreSQL vs MariaDB Local)**
    - *Decisión:* Sustituir el contenedor local de MariaDB y phpMyAdmin por una instancia gestionada de Supabase PostgreSQL conectada mediante Connection Pooler.
    - *Justificación:* Permite sincronización transparente entre múltiples dispositivos de desarrollo sin necesidad de exportar e importar volcados SQL manualmente. Elimina sobrecarga de memoria en Docker local y aprovecha las capacidades avanzadas de PostgreSQL para futuras características del menú (soporte nativo JSONB, búsquedas full-text y triggers).
-2. **Aislamiento de Variables de Entorno en 2 Capas (.env)**
+2. **Adopción de Zustand sobre Context API o Redux**
+   - *Decisión:* Emplear Zustand para el manejo del estado global de autenticación y futuras categorías del menú.
+   - *Justificación:* Ofrece una API libre de Context Providers jerárquicos (evitando re-renders innecesarios en el árbol de componentes), huella de tamaño diminuta (~1KB) y mutaciones atómicas directas.
+3. **Tipografías Autohospedadas con `@fontsource`**
+   - *Decisión:* Alojar las fuentes locales en los módulos de npm en lugar de cargarlas vía enlaces `<link>` externos de Google Fonts.
+   - *Justificación:* Elimina peticiones bloqueantes hacia servidores externos, previene el parpadeo de texto sin estilo (FOUT/FOIT) y garantiza consistencia visual idéntica en entornos offline o con políticas de seguridad restrictivas (CSP).
+4. **CSS Modules en lugar de frameworks CSS externos**
+   - *Decisión:* Utilizar CSS Modules nativos de Vite / React sin TailwindCSS ni librerías de componentes pesadas.
+   - *Justificación:* Proporciona control total sobre la estética visual, diseño dark mode a medida, micro-animaciones personalizadas y cero impacto de sobrecarga en el bundle final.
+5. **Aislamiento de Variables de Entorno en 2 Capas (.env)**
    - *Decisión:* Separar estrictamente el archivo raíz `.env` (exclusivo para mapeo de puertos Docker) del archivo `backend/.env` (credenciales maestras de base de datos y Django).
    - *Justificación:* Previene exposición de credenciales de infraestructura a la capa cliente y permite desacoplar los parámetros de host de los secretos de la aplicación.
-3. **Compilación de Dependencias Nativas en Dockerfile Backend**
-   - *Decisión:* Integrar `libpq-dev` en la imagen base `python:3.11-slim`.
-   - *Justificación:* Requerido para enlazar correctamente las librerías compartidas de PostgreSQL con `psycopg2-binary`, garantizando estabilidad en transacciones concurrentes.
-4. **Cloudinary para Gestión Multimedia Descentralizada**
-   - *Decisión:* Planificar la subida y almacenamiento de videos e imágenes de platillos directamente a Cloudinary.
-   - *Justificación:* Libera al backend de Django del procesamiento y almacenamiento de pesados archivos de video, reduciendo el consumo de ancho de banda y acelerando la entrega de contenido multimedia optimizado al frontend.
 
 ---
 
-## 12. Estado Actual (Detallado)
+## 13. Estado Actual (Detallado)
 
 ### 🟢 ¿Qué SI Funciona Ahora Mismo?
 - **Infraestructura de 2 Capas en Docker:** Contenedores `backend` y `frontend` orquestados de forma ágil y ligera.
 - **Conectividad Cloud a Supabase:** Backend conectado al cluster PostgreSQL mediante Connection Pooler (puerto 5273) con migraciones iniciales aplicadas exitosamente.
-- **Autenticación JWT:** Generación y validación de tokens de acceso y refresco con persistencia en la tabla remota `auth_user`.
-- **Handshake Frontend-Backend:** Comunicación API REST verificada con respuesta JSON y renderizado dinámico en React.
+- **Autenticación JWT en Backend:** Generación y validación de tokens de acceso y refresco con persistencia en la tabla remota `auth_user`.
+- **Fase 1 de Frontend Operativa:**
+  - Pantalla de Login con animaciones de entrada, validaciones y diseño premium.
+  - Dashboard funcional con reconocimiento de roles (`superadmin` y `restaurant`).
+  - Estado global con Zustand y simulación de servicio de autenticación con latencia de red.
+  - Tipografías locales (`Fraunces`, `Inter`, `IBM Plex Mono`) y soporte estricto de `prefers-reduced-motion`.
 - **Hot Module Replacement (HMR):** Recarga instantánea en React configurada con polling para entorno Windows/WSL2.
 
 ### 🔴 ¿Qué Falta de Implementar?
 - **Modelos de Negocio del Menú:** Creación de modelos relacionales en Django para Categorías, Platillos, Variantes, Alérgenos y Precios.
 - **Endpoints CRUD y Serializadores DRF:** Desarrollo de ViewSets y Serializers para la gestión completa de las cartas y menús digitales.
+- **Conexión Real Frontend-Backend para Auth:** Reemplazar el mock de `authService.js` por llamadas reales a los endpoints `/api/token/` del backend.
 - **Integración Activa con Cloudinary:** Implementación de subida de video y multimedia en los modelos de Django y componentes de React.
-- **Estado Global con Zustand:** Integración del store en React para gestión de categorías activas, filtros y experiencia de usuario fluida.
-- **Sistema de Diseño Visual (CSS Vanilla):** Implementación de la estética visual rica (Dark Mode, micro-animaciones, diseño premium sin Tailwind).
 
 ---
 
-## 13. Próximos Pasos Priorizados
+## 14. Próximos Pasos Priorizados
 
-1. **Diseñar los Modelos Relacionales del Menú en Django** (Importancia: Crítica)
-   - Definir tablas para `Category`, `Dish`, `DishMedia` y `PriceVariant` con validaciones e índices apropiados.
-2. **Crear ViewSets, Serializers y Rutas de la API REST** (Importancia: Crítica)
+1. **Persistencia en Git de la Fase 1:** (Importancia: Inmediata)
+   - Realizar commit y push de las vistas `LoginPage`, `DashboardPage`, `authStore.js` y dependencias `@fontsource`/`zustand`.
+2. **Diseñar los Modelos Relacionales del Menú en Django** (Importancia: Crítica)
+   - Definir tablas para `Category`, `Dish`, `DishMedia` y `PriceVariant` con validaciones e índices apropiados en Supabase.
+3. **Crear ViewSets, Serializers y Rutas de la API REST** (Importancia: Crítica)
    - Exponer endpoints CRUD protegidos para administradores y endpoints de solo lectura públicos para clientes del restaurante.
-3. **Consolidar el Sistema de Diseño en CSS Vanilla** (Importancia: Alta)
-   - Diseñar una paleta cromática sofisticada, tipografías modernas (Google Fonts), animaciones sutiles y modo oscuro de alto impacto visual.
-4. **Implementar Gestión de Estado con Zustand en React** (Importancia: Media-Alta)
-   - Configurar stores para almacenar el catálogo en memoria, filtros por categorías y persistencia de preferencias de usuario.
-5. **Vincular Carga y Reproducción de Videos con Cloudinary** (Importancia: Media)
+4. **Vincular el Login de React con el Endpoint Real JWT de Django** (Importancia: Alta)
+   - Conectar `authService.js` con `fetch`/Axios hacia `http://localhost:8000/api/token/`, almacenando el token real en `authStore.js`.
+5. **Configurar Catálogo y Menús en Zustand** (Importancia: Media-Alta)
+   - Extender el store para almacenar categorías del restaurante, filtrado en tiempo real y persistencia local del carrito.
+6. **Vincular Carga y Reproducción de Videos con Cloudinary** (Importancia: Media)
    - Conectar los campos multimedia de platillos con Cloudinary para reproducción optimizada en el frontend.
 
 ---
 
-## 14. Recomendaciones Finales para el Desarrollo
+## 15. Recomendaciones Finales para el Desarrollo
 - **Versionamiento Continuo en Git:** Mantener commits descriptivos para cada hito de refactorización y avance funcional.
 - **Paginación y Optimización de Consultas:** Implementar `select_related` y `prefetch_related` en el ORM de Django junto con paginación estándar para asegurar respuestas ultrarrápidas al consultar menús extensos en Supabase.
 - **IDs Únicos y Accesibilidad:** Mantener identificadores únicos en los elementos interactivos del frontend para pruebas automatizadas (E2E) y buenas prácticas de accesibilidad web.
+- **Respeto a Preferencias del Sistema:** Mantener la política de diseño accesible respetando `prefers-reduced-motion` en todos los componentes visuales venideros (animaciones de cartas, transiciones de platos y reproductores de video).
 
 ---
-*Documento técnico actualizado para reflejar el estado actual del repositorio tras la refactorización a Supabase y optimización de Docker Compose.*
+*Documento técnico actualizado para reflejar el estado actual del repositorio tras la refactorización a Supabase y la culminación de la Fase 1 del Frontend.*
