@@ -1,0 +1,7 @@
+superuser: barrabas_dev
+correo: jacob.barrabas.dev@gmail.com
+contraseña: sucoelceluco2
+
+superuser: admin_prueba
+correo: 
+contraseña: 123456789

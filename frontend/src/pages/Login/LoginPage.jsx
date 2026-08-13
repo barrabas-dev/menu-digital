@@ -12,7 +12,7 @@ function formatElapsed(ms) {
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('idle'); // idle | loading | error
   const [errorMessage, setErrorMessage] = useState('');
@@ -45,8 +45,8 @@ export default function LoginPage() {
     setElapsed(0);
 
     try {
-      const { token, role } = await loginRequest({ email, password });
-      setAuth({ token, role });
+      const { token, userRole } = await loginRequest({ username, password });
+      setAuth({ token, role: userRole });
       // no hace falta setStatus('idle'): el store cambia isAuthenticated
       // y App.jsx desmonta este componente.
     } catch (error) {
@@ -64,12 +64,12 @@ export default function LoginPage() {
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
           <label className={styles.field}>
-            <span className={styles.label}>Correo</span>
+            <span className={styles.label}>Usuario</span>
             <input
               className={styles.input}
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type="text"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
               autoComplete="username"
               required
               disabled={isLoading}

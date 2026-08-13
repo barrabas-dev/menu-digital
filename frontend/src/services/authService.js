@@ -1,46 +1,32 @@
-/**
- * authService.js — MOCK
- *
- * Simula el endpoint /api/token/ de Django (ver informe técnico §9).
- * Cuando DRF exponga TokenObtainPairView de verdad, solo hay que
- * reemplazar el cuerpo de login() por un fetch/axios real — la firma
- * (recibe { email, password }, resuelve { token, role }) no cambia,
- * así que ni el store ni el componente de Login necesitan tocarse.
- */
+// frontend/src/services/authService.js
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-const MOCK_USERS = [
-  {
-    email: 'admin@menudigital.dev',
-    password: 'super2026',
-    role: 'superadmin',
-    token: 'mock-jwt-superadmin-token',
-  },
-  {
-    email: 'restaurante@menudigital.dev',
-    password: 'restaurante2026',
-    role: 'restaurant',
-    token: 'mock-jwt-restaurant-token',
-  },
-];
+export const login = async (credentials) => {
+  try {
+    const response = await fetch(`${API_URL}/token/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    });
 
-const SIMULATED_NETWORK_DELAY_MS = 1600;
+    if (!response.ok) {
+      throw new Error('Credenciales inválidas o error de red');
+    }
 
-export function login({ email, password }) {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const user = MOCK_USERS.find(
-        (candidate) => candidate.email === email && candidate.password === password
-      );
+    const data = await response.json();
 
-      if (!user) {
-        reject(new Error('Credenciales inválidas. Verifica tu correo y contraseña.'));
-        return;
-      }
+    // Estructura retornada hacia authStore.js
+    return {
+      token: data.access,
+      refreshToken: data.refresh,
+      userRole: data.user.rol,
+      userId: data.user.id
+    };
 
-      resolve({
-        token: user.token,
-        role: user.role,
-      });
-    }, SIMULATED_NETWORK_DELAY_MS);
-  });
-}
+  } catch (error) {
+    console.error("Error en la autenticación:", error);
+    throw error;
+  }
+};
