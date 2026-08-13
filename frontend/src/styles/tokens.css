@@ -1,0 +1,28 @@
+/* Las fuentes se cargan self-hosted vía @fontsource — ver imports en App.jsx.
+   No hay @import de Google Fonts aquí: cero peticiones a un CDN externo. */
+
+:root {
+  /* Color — ver design-system.md §1 */
+  --bg-primary: #0C0C0E;
+  --bg-elevated: #17171A;
+  --ink: #EDEAE2;
+  --ink-muted: #8C897F;
+  --accent-brass: #B08D57;
+  --accent-wine: #9f2e2e;
+  --line: #646464;
+
+  /* Tipografía — ver design-system.md §2 */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-ui: "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--ink);
+}

@@ -1,49 +1,19 @@
-import { useState, useEffect } from 'react'
-import './App.css'
+// Fuentes self-hosted (@fontsource) — un solo peso por rol, el mínimo que
+// usa el sistema de diseño (design-system.md §2). Si más adelante se
+// necesita otro peso, se importa aquí, no desde un CDN.
+import '@fontsource/fraunces/400.css';
+import '@fontsource/fraunces/500.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/ibm-plex-mono/500.css';
 
-function App() {
-  const [mensaje, setMensaje] = useState('Cargando...')
-  const [error, setError] = useState(null)
+import { useAuthStore } from './store/authStore';
+import LoginPage from './pages/Login/LoginPage';
+import DashboardPage from './pages/Dashboard/DashboardPage';
+import './styles/tokens.css';
 
-  useEffect(() => {
-    // Usamos la variable de entorno definida en .env
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
-    
-    fetch(`${apiUrl}/test/`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Error en la red al intentar conectar con Django')
-        }
-        return response.json()
-      })
-      .then(data => setMensaje(data.message))
-      .catch(error => {
-        console.error("Hubo un problema con la petición Fetch:", error)
-        setError(error.message)
-      })
-  }, [])
+export default function App() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
-  return (
-    <div style={{ textAlign: 'center', padding: '50px' }}>
-      <h1>Módulo de Pruebas 🎉</h1>
-      <h2>Conexión React + Django</h2>
-      
-      <div style={{
-        marginTop: '20px', 
-        padding: '20px', 
-        backgroundColor: '#242424', 
-        borderRadius: '8px',
-        color: '#fff',
-        display: 'inline-block'
-      }}>
-        {error ? (
-          <p style={{ color: '#ff6b6b' }}>Error: {error}</p>
-        ) : (
-          <p style={{ color: '#4dabf7', fontSize: '1.2rem' }}>{mensaje}</p>
-        )}
-      </div>
-    </div>
-  )
+  return isAuthenticated ? <DashboardPage /> : <LoginPage />;
 }
-
-export default App
