@@ -5,7 +5,8 @@
 | --- | --- | --- |
 | 1.0 | 03/08/2026 | Documento inicial. Infraestructura y setup del proyecto. |
 | 1.1 | 13/08/2026 | Refactorización de infraestructura: Migración de base de datos a Supabase (PostgreSQL), optimización de Docker y actualización de dependencias de Django. |
-| 1.2 | 13/08/2026 | Desarrollo de Fase 1 Frontend: Maquetación de login, estado global con Zustand, mock de autenticación y optimización UI/UX. |
+| 1.2 | 13/08/2026 | Desarrollo de Fase 1 login Frontend: Maquetación de login, estado global con Zustand, mock de autenticación y optimización UI/UX. |
+| 1.3 | 16/08/2026 | Implementación de Fase 2 login (Conexión JWT con Django/Supabase) y Fase 3 (Enrutamiento protegido por roles). Pruebas y despliegue en repositorio confirmados. |
 
 ---
 
@@ -13,8 +14,8 @@
 - **Nombre del proyecto:** Menú Digital
 - **Objetivo del proyecto:** Plataforma web para restaurantes donde los clientes puedan consultar un menú digital y los platos se presenten de forma atractiva, integrando reproducción de video multimedia.
 - **Descripción funcional:** Sistema asíncrono y desacoplado, compuesto por una API REST segura para la administración (backend) y una interfaz de usuario reactiva y dinámica (frontend). Todo ejecutado sobre tecnología de contenedores ligeros con persistencia en la nube.
-- **Estado actual del desarrollo:** Fase de *Infraestructura Cloud y Frontend Fase 1 completadas*. La arquitectura base, orquestación en Docker desacoplada, base de datos PostgreSQL en Supabase Cloud, flujo de autenticación en frontend (Zustand + Mock) e interfaz visual refinada están implementados exitosamente.
-- **Fecha del informe:** 13 de Agosto de 2026.
+- **Estado actual del desarrollo:** Fases de *Infraestructura Cloud, Frontend Base, Conexión JWT y Enrutamiento Protegido completadas*. La arquitectura base, orquestación en Docker desacoplada, base de datos PostgreSQL en Supabase Cloud, autenticación JWT personalizada (con `user_id` y `rol` inyectados en claims y payload), enrutamiento protegido por roles (`<ProtectedRoute>`), pruebas de integración E2E superadas y sincronización con GitHub están implementadas exitosamente.
+- **Fecha del informe:** 16 de Agosto de 2026.
 
 ---
 
@@ -30,7 +31,7 @@
 
 ### Base de Datos
 - **Herramienta:** Supabase (PostgreSQL).
-- **Razón:** Base de datos relacional PostgreSQL de nivel empresarial alojada en la nube (DBaaS). Ofrece alta disponibilidad, escalabilidad inmediata y soporte nativo para Connection Pooling (puerto 5273), garantizando compatibilidad de resolución DNS (IPv4) desde contenedores Docker en entornos Windows/WSL2. Centraliza la persistencia de datos (incluyendo usuarios y autenticación) en internet, eliminando la necesidad de migraciones locales o sincronizaciones de volcados entre diferentes equipos de desarrollo.
+- **Razón:** Base de datos relacional PostgreSQL de nivel empresarial alojada en la nube (DBaaS). Ofrece alta disponibilidad, escalabilidad inmediata y soporte nativo para Connection Pooling (puerto 5273), garantizando compatibilidad de resolución DNS (IPv4) desde contenedores Docker en entornos Windows/WSL2. Centraliza la persistencia de datos (incluyendo usuarios, roles y autenticación) en internet, eliminando la necesidad de migraciones locales o sincronizaciones de volcados entre diferentes equipos de desarrollo.
 
 ### Docker
 - **Herramienta:** Docker Engine & Compose.
@@ -44,7 +45,7 @@
 - **Gestión de Estado (Frontend):** `zustand` (State manager ultraligero y desacoplado).
 - **Tipografía Autohospedada:** `@fontsource/fraunces`, `@fontsource/inter`, `@fontsource/ibm-plex-mono`.
 - **Gestión de variables:** `python-dotenv` (Backend), Inyección nativa `import.meta.env` (Frontend).
-- **Seguridad:** JWT (JSON Web Tokens) gestionado mediante `djangorestframework-simplejwt`.
+- **Seguridad:** JWT (JSON Web Tokens) gestionado mediante `djangorestframework-simplejwt` con serializador personalizado `CustomTokenObtainPairSerializer`.
 - **Driver de Base de Datos:** `psycopg2-binary` para comunicación optimizada entre Django y el cluster PostgreSQL de Supabase.
 - **Multimedia:** Estructura planificada para **Cloudinary**.
 
@@ -67,20 +68,21 @@ El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arqui
 |  [Contenedor Docker: menu_digital_frontend]                        |
 |                                                                    |
 |         (React + Vite - Servidor de UI / Estado Zustand)           |
-|         - Pages: LoginPage, DashboardPage (CSS Modules)            |
+|         - Pages: LoginPage, Dashboard (Agencia / Restaurante)      |
+|         - Routing: ProtectedRoute (Control de acceso por roles)     |
 |         - State: authStore (isAuthenticated, userRole, token)      |
-|         - Services: authService (Mock & Latency Layer)             |
+|         - Services: authService (Fetch real a /api/token/)         |
 +--------------------------|-----------------------------------------+
                            v
-             (Peticiones HTTP: Axios/Fetch)
+             (Peticiones HTTP: Fetch POST /api/token/)
                            |
 +--------------------------|-----------------------------------------+
 |  [Contenedor Docker: menu_digital_backend]                         |
 |  (Puerto Expuesto: 8000)                                           |
 |                                                                    |
 |                  (Django API REST)                                 |
-|    - App: core (Settings, JWT, Configuración)                      |
-|    - App: menu (Lógica Transaccional)                              |
+|    - App: core (Settings, CustomTokenObtainPairSerializer, JWT)    |
+|    - App: menu (Lógica Transaccional y Modelos)                    |
 +--------------------|-----------------------------------------------+
                      |
          (Conexión TCP / SSL Pooler: Puerto 5273 - IPv4)
@@ -89,7 +91,7 @@ El proyecto sigue el paradigma Cliente-Servidor Desacoplado mediante una **Arqui
 |           [CLOUD: Supabase PostgreSQL]                             |
 |                                                                    |
 |         - Cluster Remoto en la Nube                                |
-|         - Persistencia Centralizada (auth_user, etc)               |
+|         - Persistencia Centralizada (auth_user, roles y claims)   |
 |         - Connection Pooler (PgBouncer)                            |
 +--------------------------------------------------------------------+
 ```
@@ -110,7 +112,7 @@ menu-digital/
 │   ├── Dockerfile             # Secuencia de compilado Python 3.11-slim Linux con libpq-dev
 │   ├── requirements.txt       # Dependencias PIP (Django, DRF, psycopg2-binary, SimpleJWT, etc.)
 │   ├── manage.py              # Ejecutable principal de utilerías en Django
-│   ├── core/                  # Módulo Maestro: Settings (PostgreSQL engine), URLs raíz y JWT
+│   ├── core/                  # Módulo Maestro: Settings (PostgreSQL engine), Custom JWT Serializer y URLs
 │   └── menu/                  # Aplicación de negocio para endpoints y modelos del menú
 │
 └── frontend/                  # Componente Cliente / UI (ReactJS + Vite)
@@ -121,7 +123,7 @@ menu-digital/
     ├── vite.config.js         # Configuración Vite (Hot-Reloading Watcher con Polling para Docker)
     └── src/                   # Código fuente de la interfaz gráfica
         ├── App.css            # Estilos globales y capas de utilidades base
-        ├── App.jsx            # Enrutador declarativo raíz con renderizado condicional por autenticación
+        ├── App.jsx            # Enrutador declarativo raíz y navegación condicional/protegida
         ├── index.css          # Reset CSS, tokens de color y fuentes autohospedadas
         ├── main.jsx           # Proyección de la interfaz gráfica a index.html
         ├── pages/             # Vistas de la aplicación con CSS Modules encapsulados
@@ -131,8 +133,8 @@ menu-digital/
         │   └── Login/         # Vista de acceso con micro-animaciones
         │       ├── LoginPage.jsx
         │       └── LoginPage.module.css
-        ├── services/          # Capa de consumo API y simulación asíncrona
-        │   └── authService.js # Servicio de autenticación con mock de latencia de red
+        ├── services/          # Capa de consumo API HTTP
+        │   └── authService.js # Servicio de autenticación con peticiones fetch reales a /api/token/
         └── store/             # Gestores de estado global reactivos
             └── authStore.js   # Store Zustand para sesión, roles y tokens
 ```
@@ -223,7 +225,7 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 
 - **Conexión a Supabase Cloud & Connection Pooling (PostgreSQL):** En `settings.py` se parametrizó el bloque `DATABASES` bajo el motor `django.db.backends.postgresql`, alimentado dinámicamente por las variables de entorno de `backend/.env`. Se configuró la conexión a través del Connection Pooler de Supabase (puerto 5273) garantizando resolución IPv4 limpia desde contenedores Docker ejecutados bajo Windows/WSL2.
 - **CORS (Django):** Inclusión de `corsheaders.middleware.CorsMiddleware` y activación de `CORS_ALLOW_ALL_ORIGINS = True` en `settings.py` para permitir tráfico libre de peticiones en entorno de desarrollo.
-- **JWT (Configuración DRF):** Configuración en `settings.py` estableciendo `JWTAuthentication` como esquema predeterminado en `REST_FRAMEWORK`, con expiración de 60 minutos para Access Tokens y 24 horas para Refresh Tokens.
+- **JWT Personalizado (Configuración DRF):** Configuración en `settings.py` estableciendo `JWTAuthentication` como esquema predeterminado en `REST_FRAMEWORK`, con expiración de 60 minutos para Access Tokens y 24 horas para Refresh Tokens. Integración del serializador `CustomTokenObtainPairSerializer` para la inyección directa de claims (`user_id`, `rol`).
 - **Polling HMR (Vite / Docker en Windows):** Inyección de `watch: { usePolling: true }` en `vite.config.js` y `CHOKIDAR_USEPOLLING=true` en `docker-compose.yml`, solucionando la pérdida de eventos I/O del sistema de archivos entre el host Windows y el kernel virtualizado de Docker/WSL2.
 - **Estilos Modulares y Tipografía Local:** Implementación de CSS Modules (`*.module.css`) para aislar estilos a nivel de componente sin colisiones globales. Configuración de importación de fuentes estáticas vía `@fontsource` en `index.css`, asegurando independencia de la red externa y mejor tiempo de render inicial.
 
@@ -236,43 +238,47 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 - **Archivos:** `backend/menu/views.py`, `backend/menu/urls.py`, `backend/core/urls.py`.
 - **Funcionamiento:** React realiza una petición `fetch` al endpoint `/api/test/` de Django mediante el hook `useEffect`. La respuesta en formato JSON es procesada de manera reactiva y presentada en pantalla, eliminando el estado de carga inicial.
 
-### Endpoints JWT y Persistencia Remota de Usuarios
-- **Objetivo:** Disponer de autenticación basada en tokens JWT con persistencia en la base de datos cloud.
-- **Archivos:** `backend/core/urls.py`, base de datos remota Supabase (tabla `auth_user`).
-- **Funcionamiento:** Endpoint `TokenObtainPairView` expuesto para generación de pares de tokens (Access/Refresh). Las migraciones base de Django (`auth`, `contenttypes`, `sessions`, `admin`) fueron ejecutadas directamente sobre el cluster de Supabase, quedando los usuarios administrativos disponibles globalmente.
+### Endpoints JWT Personalizados y Persistencia Remota
+- **Objetivo:** Disponer de autenticación basada en tokens JWT con persistencia en Supabase e inyección de metadatos de usuario en el token y respuesta.
+- **Archivos:** `backend/core/urls.py`, `backend/core/serializers.py`, base de datos remota Supabase (tabla `auth_user`).
+- **Funcionamiento:** Se implementó `CustomTokenObtainPairSerializer` para inyectar `user_id` y `rol` directamente desde el registro del usuario en Supabase hacia los claims del token y dentro del payload JSON `{ access, refresh, user: { id, rol } }` que recibe el frontend al autenticarse en `/api/token/`.
 
 ---
 
-## 10. Estado del Frontend: Fase 1 — Interfaz y Estado
+## 10. Estado del Frontend: Fases 1, 2 y 3 — Interfaz, Conexión JWT y Enrutamiento Protegido
 
 > [!NOTE]
-> **Estado:** Fase 1 — Interfaz y Estado completada exitosamente (código funcional probado en entorno local, pendiente de commit/push en el repositorio Git).
+> **Estado:** Fases 1, 2 y 3 completadas exitosamente. Conexión real frontend-backend validada, enrutamiento por roles activo y cambios integrados en el repositorio Git.
 
-Se implementó la arquitectura base del cliente web en React, consolidando la maquetación visual de acceso, el gestor de estado global y el desacoplamiento con una capa de servicio simulada.
+Se implementó la arquitectura completa de autenticación y navegación en React, consolidando la maquetación visual, el gestor de estado global, la conexión HTTP real contra DRF y el enrutamiento protegido.
 
 ### Elementos Técnicos Construidos
 
 1. **Maquetación y Vistas Modulares:**
    - **`LoginPage.jsx` y `LoginPage.module.css`:** Interfaz de inicio de sesión refinada con presentación de marca, formulario controlado, manejo de estados de carga (`loading`), estados de deshabilitación interactiva y alertas de error inline contextuales.
-   - **`DashboardPage.jsx` y `DashboardPage.module.css`:** Vista protegida que actúa como placeholder visual y funcional. Permite verificar la reactividad por roles (`superadmin` y `restaurant`), visualizar la sesión activa del usuario y accionar el cierre de sesión (`logout`).
+   - **`DashboardPage.jsx` y `DashboardPage.module.css`:** Vista protegida que actúa como espacio de control según rol (`superadmin` y `restaurant`), permitiendo visualizar la sesión activa del usuario y accionar el cierre de sesión (`logout`).
    - **Aislamiento de Estilos:** Se utilizó la arquitectura de CSS Modules (`.module.css`), garantizando que las clases generadas posean hashes únicos, impidiendo cualquier fuga o colisión de estilos entre pantallas.
 
 2. **Gestión de Estado Global (`authStore.js` con Zustand):**
    - Se configuró un store centralizado con **Zustand** para orquestar de forma atómica y ligera el ciclo de vida de autenticación.
-   - **Estado Expuesto:** `isAuthenticated` (booleano), `userRole` (admite `'superadmin'` o `'restaurant'`) y `token` (identificador o JWT de sesión).
+   - **Estado Expuesto:** `isAuthenticated` (booleano), `userRole` (admite `'superadmin'` o `'restaurant'`) y `token` (JWT de acceso).
    - **Acciones:** `login(userData)` y `logout()`, permitiendo mutaciones de estado limpias sin boilerplate ni reducers complejos.
-   - **Enrutamiento Declarativo:** El componente raíz `App.jsx` se suscribe directamente a `authStore.js` para renderizar condicionalmente `LoginPage` o `DashboardPage` en función de `isAuthenticated`.
 
-3. **Mock de Servicios de Autenticación (`authService.js`):**
-   - Capa de abstracción encargada de interactuar con el login, simulando latencia realista de red (~1.6 segundos) mediante promesas asíncronas (`setTimeout`).
-   - Valida credenciales contra usuarios de prueba preconfigurados (`superadmin` y `restaurant`), retornando tokens mockeados y asignación de roles dinámica.
-   - Gestiona el rechazo controlado de promesas ante credenciales erróneas, permitiendo a la UI capturar y mostrar mensajes de error descriptivos.
+3. **Conexión Real con API de Autenticación (`authService.js`):**
+   - Capa de servicio encargada de realizar llamadas `fetch` reales al endpoint `/api/token/` del backend de Django.
+   - Mapeo correcto de credenciales (`username` y `password`) en el cuerpo de la petición POST.
+   - Procesamiento de la respuesta JSON para extraer `access` token, `refresh` token, `userRole` y `userId`, propagándolos directamente a `authStore.js`.
+   - Captura y manejo de errores de red y credenciales inválidas para retroalimentación visual en la UI.
 
-4. **Tipografía Local Autohospedada (@fontsource):**
+4. **Enrutamiento Protegido por Roles (Fase 3):**
+   - Integración de componente `<ProtectedRoute>` para resguardar las rutas privadas.
+   - Redirección condicional automática basada en roles: usuarios con rol de Agencia / SuperAdmin son dirigidos a `/agencia` y usuarios de Restaurante hacia `/restaurante`.
+
+5. **Tipografía Local Autohospedada (@fontsource):**
    - Se erradicó por completo la dependencia de CDNs de terceros (como Google Fonts) para eliminar bloqueos de red y optimizar el First Contentful Paint (FCP).
    - Se integraron los paquetes `@fontsource/fraunces` (títulos y display con carácter editorial), `@fontsource/inter` (cuerpo de texto e interfaces) y `@fontsource/ibm-plex-mono` (insignias de roles, metadatos y código).
 
-5. **Detalles de UI/UX y Accesibilidad Visual:**
+6. **Detalles de UI/UX y Accesibilidad Visual:**
    - **Micro-interacciones:** Pulso visual sutil en el botón principal de acción (CTA) para invitar a la interacción sin saturar al usuario.
    - **Contraste y Profundidad:** Fondos elevados con translucidez sutil en inputs y tarjetas, mejorando el contraste según directrices de legibilidad.
    - **Textura Cinematográfica:** Capa de textura de grano de película implementada mediante un elemento SVG inline no invasivo con `mix-blend-mode: screen` y `pointer-events: none`.
@@ -328,45 +334,49 @@ Se implementó la arquitectura base del cliente web en React, consolidando la ma
 
 ### 🟢 ¿Qué SI Funciona Ahora Mismo?
 - **Infraestructura de 2 Capas en Docker:** Contenedores `backend` y `frontend` orquestados de forma ágil y ligera.
-- **Conectividad Cloud a Supabase:** Backend conectado al cluster PostgreSQL mediante Connection Pooler (puerto 5273) con migraciones iniciales aplicadas exitosamente.
-- **Autenticación JWT en Backend:** Generación y validación de tokens de acceso y refresco con persistencia en la tabla remota `auth_user`.
-- **Fase 1 de Frontend Operativa:**
-  - Pantalla de Login con animaciones de entrada, validaciones y diseño premium.
-  - Dashboard funcional con reconocimiento de roles (`superadmin` y `restaurant`).
-  - Estado global con Zustand y simulación de servicio de autenticación con latencia de red.
-  - Tipografías locales (`Fraunces`, `Inter`, `IBM Plex Mono`) y soporte estricto de `prefers-reduced-motion`.
+- **Conectividad Cloud a Supabase:** Backend conectado al cluster PostgreSQL mediante Connection Pooler (puerto 5273) con migraciones aplicadas exitosamente.
+- **Conexión Real Frontend-Backend (Fase 2):** Se reemplazó el mock de `authService.js` por llamadas `fetch` reales al endpoint `/api/token/`. Se corrigió el mapeo de `email` a `username` en el payload.
+- **Autenticación JWT Personalizada:** Se implementó `CustomTokenObtainPairSerializer` en Django para inyectar `user_id` y `rol` directamente desde el registro del usuario en Supabase hacia el frontend.
+- **Enrutamiento Protegido (Fase 3):** Se integró `react-router-dom` implementando un componente `<ProtectedRoute>`. Se configuró la redirección automática basada en roles (SuperAdmin hacia `/agencia` y Restaurante hacia `/restaurante`).
+- **Pruebas y Control de Versiones:** Las pruebas de integración de extremo a extremo (login exitoso con usuarios reales) fueron superadas. El código ha sido comiteado y empujado (push) a GitHub exitosamente.
+- **Fase 1 de Frontend Operativa:** Pantalla de Login con animaciones de entrada, Dashboard funcional con estado global en Zustand, tipografías locales (`Fraunces`, `Inter`, `IBM Plex Mono`) y soporte estricto de `prefers-reduced-motion`.
 - **Hot Module Replacement (HMR):** Recarga instantánea en React configurada con polling para entorno Windows/WSL2.
 
 ### 🔴 ¿Qué Falta de Implementar?
 - **Modelos de Negocio del Menú:** Creación de modelos relacionales en Django para Categorías, Platillos, Variantes, Alérgenos y Precios.
 - **Endpoints CRUD y Serializadores DRF:** Desarrollo de ViewSets y Serializers para la gestión completa de las cartas y menús digitales.
-- **Conexión Real Frontend-Backend para Auth:** Reemplazar el mock de `authService.js` por llamadas reales a los endpoints `/api/token/` del backend.
 - **Integración Activa con Cloudinary:** Implementación de subida de video y multimedia en los modelos de Django y componentes de React.
 
 ---
 
 ## 14. Próximos Pasos Priorizados
 
-1. **Persistencia en Git de la Fase 1:** (Importancia: Inmediata)
-   - Realizar commit y push de las vistas `LoginPage`, `DashboardPage`, `authStore.js` y dependencias `@fontsource`/`zustand`.
-2. **Diseñar los Modelos Relacionales del Menú en Django** (Importancia: Crítica)
+1. **Diseñar los Modelos Relacionales del Menú en Django (Categorías, Platillos, Variantes de Precio y Modelos Multimedia) y Exponer sus Respectivos ViewSets y Serializers** (Importancia: Crítica)
    - Definir tablas para `Category`, `Dish`, `DishMedia` y `PriceVariant` con validaciones e índices apropiados en Supabase.
-3. **Crear ViewSets, Serializers y Rutas de la API REST** (Importancia: Crítica)
    - Exponer endpoints CRUD protegidos para administradores y endpoints de solo lectura públicos para clientes del restaurante.
-4. **Vincular el Login de React con el Endpoint Real JWT de Django** (Importancia: Alta)
-   - Conectar `authService.js` con `fetch`/Axios hacia `http://localhost:8000/api/token/`, almacenando el token real en `authStore.js`.
-5. **Configurar Catálogo y Menús en Zustand** (Importancia: Media-Alta)
+2. **Configurar Catálogo y Menús en Zustand** (Importancia: Media-Alta)
    - Extender el store para almacenar categorías del restaurante, filtrado en tiempo real y persistencia local del carrito.
-6. **Vincular Carga y Reproducción de Videos con Cloudinary** (Importancia: Media)
+3. **Vincular Carga y Reproducción de Videos con Cloudinary** (Importancia: Media)
    - Conectar los campos multimedia de platillos con Cloudinary para reproducción optimizada en el frontend.
 
 ---
 
-## 15. Recomendaciones Finales para el Desarrollo
+## 15. Futuras Mejoras (Post-MVP)
+
+> [!NOTE]
+> Estas medidas de seguridad se posponen para una fase posterior, priorizando actualmente la construcción de un MVP funcional cercano a producción.
+
+- **Manejo Seguro de Tokens (HttpOnly Cookies):** Transición del almacenamiento de JWT en memoria/store hacia cookies con atributos `HttpOnly`, `Secure` y `SameSite` para mitigar riesgos de vulnerabilidades XSS.
+- **Rate Limiting y Throttling:** Configuración de `django-ratelimit` o el sistema de Throttling nativo de DRF en endpoints sensibles (`/api/token/`) para blindar el backend contra ataques de fuerza bruta y saturación de peticiones.
+- **Políticas Estrictas de CORS y Encabezados de Seguridad:** Reemplazo de la directiva permisiva `CORS_ALLOW_ALL_ORIGINS = True` por una lista blanca estricta de dominios autorizados en producción y configuración de Content Security Policy (CSP).
+
+---
+
+## 16. Recomendaciones Finales para el Desarrollo
 - **Versionamiento Continuo en Git:** Mantener commits descriptivos para cada hito de refactorización y avance funcional.
 - **Paginación y Optimización de Consultas:** Implementar `select_related` y `prefetch_related` en el ORM de Django junto con paginación estándar para asegurar respuestas ultrarrápidas al consultar menús extensos en Supabase.
 - **IDs Únicos y Accesibilidad:** Mantener identificadores únicos en los elementos interactivos del frontend para pruebas automatizadas (E2E) y buenas prácticas de accesibilidad web.
 - **Respeto a Preferencias del Sistema:** Mantener la política de diseño accesible respetando `prefers-reduced-motion` en todos los componentes visuales venideros (animaciones de cartas, transiciones de platos y reproductores de video).
 
 ---
-*Documento técnico actualizado para reflejar el estado actual del repositorio tras la refactorización a Supabase y la culminación de la Fase 1 del Frontend.*
+*Documento técnico actualizado para reflejar el estado actual del repositorio tras la implementación de las Fases 2 y 3 del login (Autenticación JWT con Supabase y Enrutamiento Protegido).*
