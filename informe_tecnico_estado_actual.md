@@ -124,6 +124,8 @@ menu-digital/
     └── src/                   # Código fuente de la interfaz gráfica
         ├── App.css            # Estilos globales y capas de utilidades base
         ├── App.jsx            # Enrutador declarativo raíz y navegación condicional/protegida
+        ├── components/        # Componentes funcionales reutilizables
+        │   └── ProtectedRoute.jsx # Envoltorio de seguridad para validación de sesión y roles
         ├── index.css          # Reset CSS, tokens de color y fuentes autohospedadas
         ├── main.jsx           # Proyección de la interfaz gráfica a index.html
         ├── pages/             # Vistas de la aplicación con CSS Modules encapsulados
@@ -212,6 +214,7 @@ Contiene la configuración de seguridad y las credenciales directas de conexión
 |---|---|---|
 | `react` | `^19.2.x` | Biblioteca para renderizado declarativo y gestión de componentes UI. |
 | `react-dom` | `^19.2.x` | Integración y manipulación del árbol DOM para la aplicación React. |
+| `react-router-dom` | `^6.x / ^7.x` | Enrutador del lado del cliente y sistema declarativo de protección de rutas. |
 | `vite` | `^8.2.x` | Entorno de desarrollo ultrarrápido y empaquetador con HMR instantáneo. |
 | `@vitejs/plugin-react` | `^6.0.x` | Plugin oficial de soporte JSX/Fast Refresh con Babel para React en Vite. |
 | `zustand` | `^5.0.x` | Gestor de estado global reactivo, atómico y libre de boilerplate. |
@@ -271,8 +274,9 @@ Se implementó la arquitectura completa de autenticación y navegación en React
    - Captura y manejo de errores de red y credenciales inválidas para retroalimentación visual en la UI.
 
 4. **Enrutamiento Protegido por Roles (Fase 3):**
-   - Integración de componente `<ProtectedRoute>` para resguardar las rutas privadas.
-   - Redirección condicional automática basada en roles: usuarios con rol de Agencia / SuperAdmin son dirigidos a `/agencia` y usuarios de Restaurante hacia `/restaurante`.
+   - Integración de la librería `react-router-dom` implementando un esquema declarativo con `BrowserRouter`, `Routes` y `Route`.
+   - Desarrollo del componente reutilizable `<ProtectedRoute>` que evalúa el estado del `authStore` para resguardar las vistas privadas (`/agencia`, `/restaurante`) basándose en la lista de `allowedRoles`.
+   - Lógica central de redirección en la ruta raíz `/`: si hay sesión activa, dirige automáticamente según el perfil del usuario. Si el usuario intenta acceder a una ruta para la que no tiene permisos, se le restringe el acceso con un componente de fallback.
 
 5. **Tipografía Local Autohospedada (@fontsource):**
    - Se erradicó por completo la dependencia de CDNs de terceros (como Google Fonts) para eliminar bloqueos de red y optimizar el First Contentful Paint (FCP).
